@@ -74,8 +74,8 @@ jobs:
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/99-builder
           mkdir -p work "$RUNNER_TEMP/stage/x86_64"
-          mv "WaveR_${VERSION}_x86_64.tar.gz" work/
           SUM="$(sha512sum "WaveR_${VERSION}_x86_64.tar.gz" | cut -d' ' -f1)"
+          mv "WaveR_${VERSION}_x86_64.tar.gz" work/
           # The heredoc is UNQUOTED on purpose: ${VERSION} and ${SUM} must
           # expand while writing the file. makepkg runtime variables are
           # escaped (\$) or bash would expand them (to empty) right here!
