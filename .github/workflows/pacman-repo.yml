@@ -143,7 +143,9 @@ jobs:
           # Rebuild gh-pages from scratch every run: a fresh orphan branch,
           # force-pushed, replaces whatever was there (latest-only design).
           git checkout --orphan gh-pages
-          git rm -rq .
+          # -f is required: on an orphan branch every index entry counts
+          # as "staged changes" (HEAD does not exist yet)
+          git rm -rfq .
           cp -r "$RUNNER_TEMP/stage/"* .
           git add index.html x86_64
           git commit -m "Publish wave-r ${VERSION} to the pacman repository"
