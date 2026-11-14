@@ -130,6 +130,9 @@ jobs:
           EOF
 
       - name: Publish to gh-pages
+        # pin the workspace explicitly: a previous step's cd would
+        # otherwise persist (cwd is NOT reset between container steps)
+        working-directory: ${{ github.workspace }}
         run: |
           set -euxo pipefail
           git config user.name "github-actions[bot]"
