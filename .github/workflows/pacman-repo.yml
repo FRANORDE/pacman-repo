@@ -1,18 +1,26 @@
 # Builds the WaveR pacman package with a real Arch toolchain and publishes
 # a self-hosted pacman repository on the gh-pages branch.
 #
-# Run manually after publishing a WaveR release:
+# Automatic mode (schedule): every 6 hours the check job compares the
+# latest PUBLISHED WaveR release with the version marker on gh-pages
+# (latest); it publishes only on change. Draft releases are ignored by
+# the API. Like the Scoop bucket auto-update: scheduled workflows in a
+# public repo get disabled after 60 days of no repo activity - re-enable
+# them from Actions -> pacman-repo if that ever happens.
+#
+# Manual mode (workflow_dispatch): leave "version" empty to publish the
+# latest release, or set it (with or without leading "v") to force a
+# rebuild of a specific version:
 #   gh workflow run pacman-repo.yml -f version=2.0.0
-# The tarball is fetched from the PUBLISHED GitHub release (draft assets
-# are not reachable: curl gets a 404 without authentication).
 #
 # What lands on gh-pages (Pages URL = https://franorde.github.io/pacman-repo/):
 #   x86_64/wave-r.db                               database (pacman fetches <repo>.db)
 #   x86_64/wave-r.db.tar.gz                        same database, name kept by repo-add
 #   x86_64/wave-r-<ver>-<rel>-x86_64.pkg.tar.zst   the package
+#   latest                                         published version marker (for the check)
 #   index.html                                     tiny landing page (root would 404)
 #
-# Design: the repository contains ONLY the latest release; every run
+# Design: the repository contains ONLY the latest release; every publish
 # rebuilds the database from scratch (no state carried over). Older
 # versions stay available as WaveR release assets.
 
@@ -22,9 +30,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: WaveR version to publish (with or without leading "v")
-        required: true
+        description: WaveR version to publish (empty = latest published release)
+        required: false
         type: string
+  schedule:
+    # every 6 hours, like the Scoop bucket auto-update
+    - cron: "17 */6 * * *"
 
 permissions:
   contents: write
@@ -34,7 +45,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.decide.outputs.version }}
+      should: ${{ steps.decide.outputs.should }}
+    steps:
+      - name: Compare the latest WaveR release with the published repo
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_VERSION" ]; then
+            # manual run with an explicit version: always publish
+            echo "version=${INPUT_VERSION#v}" >> "$GITHUB_OUTPUT"
+            echo "should=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # latest PUBLISHED release (the API ignores drafts)
+          LATEST="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/FRANORDE/WaveR/releases/latest" \
+            | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+          LATEST="${LATEST#v}"
+          echo "latest WaveR release: ${LATEST}"
+          PUBLISHED="$(curl -fsSL \
+            "https://franorde.github.io/pacman-repo/latest" || true)"
+          echo "currently published: ${PUBLISHED:-none}"
+          if [ "$PUBLISHED" = "$LATEST" ]; then
+            echo "nothing to do"
+            echo "should=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish needed"
+            echo "should=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$LATEST" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: check
+    if: needs.check.outputs.should == 'true'
     runs-on: ubuntu-latest
     container:
       # Real Arch toolchain: makepkg and repo-add only exist here.
@@ -44,13 +94,11 @@ jobs:
         # Container steps run with sh (dash) by default: force bash.
         shell: bash
     env:
-      VERSION: ${{ inputs.version }}
+      VERSION: ${{ needs.check.outputs.version }}
     steps:
-      - name: Install tooling and normalize the version
+      - name: Install tooling
         run: |
           set -euxo pipefail
-          VERSION="${VERSION#v}"
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           pacman -Syu --noconfirm
           pacman -S --needed --noconfirm git curl sudo fakeroot alsa-lib gtk3
           # note: alsa-lib and gtk3 are WaveR's runtime deps; makepkg refuses
@@ -74,6 +122,7 @@ jobs:
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/99-builder
           mkdir -p work "$RUNNER_TEMP/stage/x86_64"
+          # compute the checksum BEFORE moving the file into work/
           SUM="$(sha512sum "WaveR_${VERSION}_x86_64.tar.gz" | cut -d' ' -f1)"
           mv "WaveR_${VERSION}_x86_64.tar.gz" work/
           # The heredoc is UNQUOTED on purpose: ${VERSION} and ${SUM} must
@@ -113,7 +162,7 @@ jobs:
           rm -f wave-r.db
           cp wave-r.db.tar.gz wave-r.db
 
-      - name: Write the landing page
+      - name: Write the landing page and version marker
         run: |
           set -euo pipefail
           # Quoted heredoc: no expansion, safe for HTML.
@@ -128,6 +177,8 @@ jobs:
             </body>
           </html>
           EOF
+          # version marker consumed by the scheduled check
+          echo "$VERSION" > "$RUNNER_TEMP/stage/latest"
 
       - name: Publish to gh-pages
         run: |
@@ -140,13 +191,14 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Rebuild gh-pages from scratch every run: a fresh orphan branch,
-          # force-pushed, replaces whatever was there (latest-only design).
+          # Rebuild gh-pages from scratch every publish: a fresh orphan
+          # branch, force-pushed, replaces whatever was there (latest-only
+          # design).
           git checkout --orphan gh-pages
           # -f is required: on an orphan branch every index entry counts
           # as "staged changes" (HEAD does not exist yet)
           git rm -rfq .
           cp -r "$RUNNER_TEMP/stage/"* .
-          git add index.html x86_64
+          git add -A
           git commit -m "Publish wave-r ${VERSION} to the pacman repository"
           git push --force origin gh-pages
