@@ -137,7 +137,8 @@ jobs:
           # step env, which makes even "git config" die with
           # "not in a git directory": unset it and let git discover the
           # checkout from the current directory
-          echo "cwd=$(pwd) GIT_DIR=[$GIT_DIR] GIT_WORK_TREE=[$GIT_WORK_TREE]"
+          echo "cwd=$(pwd)"
+          echo "GIT_DIR=[${GIT_DIR:-}] GIT_WORK_TREE=[${GIT_WORK_TREE:-}] HOME=[${HOME:-}]"
           unset GIT_DIR GIT_WORK_TREE
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
