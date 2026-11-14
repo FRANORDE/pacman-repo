@@ -133,13 +133,11 @@ jobs:
         run: |
           set -euxo pipefail
           cd "$GITHUB_WORKSPACE"
-          # some container runners export an invalid GIT_DIR into the
-          # step env, which makes even "git config" die with
-          # "not in a git directory": unset it and let git discover the
-          # checkout from the current directory
-          echo "cwd=$(pwd)"
-          echo "GIT_DIR=[${GIT_DIR:-}] GIT_WORK_TREE=[${GIT_WORK_TREE:-}] HOME=[${HOME:-}]"
-          unset GIT_DIR GIT_WORK_TREE
+          # checkout marks the repo safe only in its own temporary HOME,
+          # which is gone by now; container steps run as root on a
+          # runner-owned workspace, so git refuses the repository
+          # (safe.directory check) until we mark it safe with OUR config
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Rebuild gh-pages from scratch every run: a fresh orphan branch,
