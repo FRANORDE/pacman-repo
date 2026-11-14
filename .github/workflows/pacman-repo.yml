@@ -88,7 +88,7 @@ jobs:
           url="https://github.com/FRANORDE/WaveR"
           license=('MIT')
           depends=('alsa-lib' 'gtk3')
-          options=('!strip')
+          options=('!strip' '!debug')
           source=("WaveR_${VERSION}_x86_64.tar.gz")
           sha512sums=("${SUM}")
 
