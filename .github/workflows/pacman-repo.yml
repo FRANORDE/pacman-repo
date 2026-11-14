@@ -130,11 +130,15 @@ jobs:
           EOF
 
       - name: Publish to gh-pages
-        # pin the workspace explicitly: a previous step's cd would
-        # otherwise persist (cwd is NOT reset between container steps)
-        working-directory: ${{ github.workspace }}
         run: |
           set -euxo pipefail
+          cd "$GITHUB_WORKSPACE"
+          # some container runners export an invalid GIT_DIR into the
+          # step env, which makes even "git config" die with
+          # "not in a git directory": unset it and let git discover the
+          # checkout from the current directory
+          echo "cwd=$(pwd) GIT_DIR=[$GIT_DIR] GIT_WORK_TREE=[$GIT_WORK_TREE]"
+          unset GIT_DIR GIT_WORK_TREE
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Rebuild gh-pages from scratch every run: a fresh orphan branch,
