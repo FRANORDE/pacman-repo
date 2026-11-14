@@ -118,17 +118,18 @@ jobs:
         run: |
           set -euxo pipefail
           # makepkg refuses to run as root: create a builder user with
-          # passwordless sudo instead.
+          # passwordless sudo instead. Build OUTSIDE the workspace
+          # (RUNNER_TEMP): stray build files must never reach git.
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/99-builder
-          mkdir -p work "$RUNNER_TEMP/stage/x86_64"
-          # compute the checksum BEFORE moving the file into work/
+          mkdir -p "$RUNNER_TEMP/build" "$RUNNER_TEMP/stage/x86_64"
+          # compute the checksum BEFORE moving the file into the build dir
           SUM="$(sha512sum "WaveR_${VERSION}_x86_64.tar.gz" | cut -d' ' -f1)"
-          mv "WaveR_${VERSION}_x86_64.tar.gz" work/
+          mv "WaveR_${VERSION}_x86_64.tar.gz" "$RUNNER_TEMP/build/"
           # The heredoc is UNQUOTED on purpose: ${VERSION} and ${SUM} must
           # expand while writing the file. makepkg runtime variables are
           # escaped (\$) or bash would expand them (to empty) right here!
-          cat > work/PKGBUILD <<EOF
+          cat > "$RUNNER_TEMP/build/PKGBUILD" <<EOF
           pkgname=wave-r
           pkgver=${VERSION}
           pkgrel=1
@@ -147,9 +148,9 @@ jobs:
               cp -r "\${srcdir}/usr" "\${pkgdir}"
           }
           EOF
-          chown -R builder:builder work
-          (cd work && sudo -H -u builder makepkg -f)
-          mv work/wave-r-*.pkg.tar.zst "$RUNNER_TEMP/stage/x86_64/"
+          chown -R builder:builder "$RUNNER_TEMP/build"
+          (cd "$RUNNER_TEMP/build" && sudo -H -u builder makepkg -f)
+          mv "$RUNNER_TEMP/build"/wave-r-*.pkg.tar.zst "$RUNNER_TEMP/stage/x86_64/"
 
       - name: Build the repository database
         run: |
@@ -199,6 +200,8 @@ jobs:
           # as "staged changes" (HEAD does not exist yet)
           git rm -rfq .
           cp -r "$RUNNER_TEMP/stage/"* .
-          git add -A
+          # explicit paths (never git add -A: the workspace may hold
+          # leftover build files that must not reach the repository)
+          git add index.html latest x86_64
           git commit -m "Publish wave-r ${VERSION} to the pacman repository"
           git push --force origin gh-pages
