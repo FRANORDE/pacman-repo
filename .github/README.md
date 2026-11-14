@@ -5,7 +5,8 @@ Self-hosted [pacman](https://wiki.archlinux.org/title/Pacman) repository for
 
 Packages are built automatically from the WaveR releases (see
 [`.github/workflows/pacman-repo.yml`](.github/workflows/pacman-repo.yml)) and
-published here on the [`gh-pages`](../../tree/gh-pages) branch. The repository
+published here on the [`gh-pages`](../../tree/gh-pages) branch. New WaveR
+releases are picked up within 6 hours, with no manual steps. The repository
 always contains the latest release only; older versions remain available as
 [WaveR release assets](https://github.com/FRANORDE/WaveR/releases).
 
@@ -50,10 +51,14 @@ repository.
   [WaveR releases](https://github.com/FRANORDE/WaveR/releases), wraps it into
   a proper Arch package (`wave-r`) with `makepkg`, indexes it with `repo-add`
   and pushes the result to `gh-pages`.
-- It is triggered manually, with the version to publish:
+- It is triggered **automatically every 6 hours**: a cheap check job compares
+  the latest *published* WaveR release with the `latest` marker on `gh-pages`
+  and publishes only when they differ (draft releases are ignored, and a
+  manual dispatch with an explicit version always publishes):
 
   ```bash
-  gh workflow run pacman-repo.yml -f version=2.0.0
+  gh workflow run pacman-repo.yml            # no input = check the latest release
+  gh workflow run pacman-repo.yml -f version=2.0.0   # force a rebuild
   ```
 
   The WaveR release must be **published** first (draft assets are not
